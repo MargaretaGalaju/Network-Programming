@@ -1,6 +1,6 @@
-#Second lab at network programming(Client-Server Project)
-  
-  ## Table of contents
+# Lab 2 - Implementation of a protocol stack
+
+## Table of contents
   
   * [Task Description](#task-description)
       * [Server](#server) 
@@ -24,7 +24,6 @@ For transport and session level protocols the BSD Sockets API is a recommended s
 - Packet.java
 - AES.java
 
-
 ## Implementation 
 
 I have the following features implemented in my project :
@@ -32,6 +31,7 @@ I have the following features implemented in my project :
 * Server and HttpServer
 * Simulation routing of network packets
 * Encryption algorithm using AES – Advanced Encryption Standard
+* Multicasting
 
 -------------------------
 
@@ -41,56 +41,96 @@ This HTTP client API have been based on file manager example between client ans 
 
 ---------------------
 
-####Server
 
-My server is being initialized in the HttpServerApplication.java class where we can set a port number and any directory for the file managing.
-So after we run the program, it reads user input, where we can figure out the port number Ex.(-p 8080) or out file directory path Ex.(-d C:\Users\tanya\HttpServerApplication.java)
-After server had been launched, listener( ) method listens to client requests on connection.
+#### UDP Client & UDP Server
+For establishing connection between UDP Client & UDP Server I created two classes UDPClient and UDPServer and using DatagramChannel established the connection between them two.
+Java NIO Datagram is used as channel which can send and receive UDP packets over a connection less protocol. DataGram channel can be open by calling its one of the static method named as open() which can also take IP address as parameter so that it can be used for multi casting.
 
-The main logic is included in the UDPServer.java class.
-The java.nio.channels.DatagramChannel class does not have any public constructors. 
-Instead, I have created a new DatagramChannel object using the static open( ) method.
-This channel is not initially bound to any port. To bind it, you need to access the channel's peer
-DatagramSocket object using the socket( ) method:
+This example opens a DatagramChannel which can receive packets on UDP port 8080:
+
 ```
- public void listenAndServe( int port, String directory) throws IOException {
-        try (DatagramChannel channel = DatagramChannel.open()) {
+int port = 8080;
+...
+server.listenAndServe( port, directory);
+...
+try (DatagramChannel channel = DatagramChannel.open()) {
             channel.bind(new InetSocketAddress(port));
+            ...
+```
 
-            System.out.println("" + channel.getLocalAddress());
+send(ByteBuffer src, SocketAddress target) − This method is used to send datagram via this channel.
+```
+channel.send(resp.toBuffer(), router);
+```
 
-            ByteBuffer buf = ByteBuffer
-                    .allocate(Packet.MAX_LEN)
-                    .order(ByteOrder.BIG_ENDIAN);
+ The receive( ) method reads a packet. Besides the special purpose receive( ) method, DatagramChannel has the usual three read( ) methods.
+```
+ SocketAddress router = channel.receive(buf);
+```
+ #### Packet transmission
+
+Packet represents a simulated network packet. As we don't have unsigned types in Java, we can achieve this by using a larger type.
+
+The following code creates a builder from the current packet It's used to create another packet by re-using some parts of the current packet.
 
 
 ```
-We start to listen to any client request. 
-Also I have used ByteBuffer for my all data.
-The receive( ) method reads one datagram packet from the channel into a ByteBuffer.
+ public Builder toBuilder(){
+        return new Builder()
+                .setType(type)
+                .setSequenceNumber(sequenceNumber)
+                .setPeerAddress(peerAddress)
+                .setPortNumber(peerPort)
+                .setPayload(payload);
 ```
-                 buf.clear();
-                SocketAddress router = channel.receive(buf);
 
-                // Parse a packet from the received raw data.
-                buf.flip();
-                Packet packet = Packet.fromBuffer(buf);
-                buf.flip();
+fromBuffer creates a packet from the given ByteBuffer in BigEndian.
+
 ```
- In order to parse received data I implemented fromBuffer( ) method, which creates a packet from the given ByteBuffer in BigEndian.
- So any client message is handled and encrypted due to the server.
- 
- Therefore, the main idea of my project to show Http client api with UDP Server, I have preformed methods which analyse http requests and implement file managing:
+public static Packet fromBuffer(ByteBuffer buf) throws IOException {
+    if (buf.limit() < MIN_LEN || buf.limit() > MAX_LEN) {
+        throw new IOException("Invalid length");
+    }
+
+    Builder builder = new Builder();
+
+    builder.setType(Byte.toUnsignedInt(buf.get()));
+    builder.setSequenceNumber(Integer.toUnsignedLong(buf.getInt()));
+
+    byte[] host = new byte[]{buf.get(), buf.get(), buf.get(), buf.get()};
+    builder.setPeerAddress(Inet4Address.getByAddress(host));
+    builder.setPortNumber(Short.toUnsignedInt(buf.getShort()));
+
+    byte[] payload = new byte[buf.remaining()];
+    buf.get(payload);
+    builder.setPayload(payload);
+
+    return builder.create();
+}
+```
+
+fromBytes creates a packet from the given array of bytes:
+
+```
+public static Packet fromBytes(byte[] bytes) throws IOException {
+    ByteBuffer buf = ByteBuffer.allocate(MAX_LEN).order(ByteOrder.BIG_ENDIAN);
+    buf.put(bytes);
+    buf.flip();
+    return fromBuffer(buf);
+}
+```
+ Therefore, the main idea of my project is to show how Http client api working with UDP Server, I have preformed methods which analyse http requests and implement file managing:
  * POST file with text 
  * GET file with text
- * UPDATE existed file with text
+ * UPDATE(Post) existed file with text(post includes update methods too)
  
  **HTTP parser**
- It has very simple logic in order to simulate basis of API requests.
+ It has very simple logic in order to simulate basic operations of HTTP API requests.
  
  Client sends request
  
- (like string "post -h headesEx. -d body1 test.txt")  which is converted into -->  (POST test.txt HTTP\1.0\headesEx.-d\\body1) 
+ like string
+ ("post -h headesEx. -d body1 test.txt")  which is converted into -->  (POST test.txt HTTP\1.0\headesEx.-d\\body1) 
  
  and server sends response in the following form(using postResponse( ) and getResponse( ) methods):
  
@@ -118,10 +158,11 @@ The receive( ) method reads one datagram packet from the channel into a ByteBuff
 
                     System.out.println("SERVER: Sending this message to client: " + serverResponse);
 ```
-Also there are implemented methods for "3 way handshake" in order to make UDP protocol reliable to guarantee packet transmission
+Also there are implemented methods for "3 way handshake" in order to make reliable UDP protocol to guarantee packet transmission.
 
 --------------------
-####Client
+
+#### Client
 
 Get request
 It accepts client request as a parameter. Written request is split by spaces and analyzed on header presence. 
@@ -138,10 +179,6 @@ Server code:
                     System.out.println("SERVER: Sending back syn ack");
                     Packet resp = packet.toBuilder()
                             .setType(2)
-                            .create();
-                    channel.send(resp.toBuffer(), router);
-                }
-```
 Client code:
 ```
                                   String msg = "SYN";            // Creating packet
@@ -175,6 +212,10 @@ If payload is received, it is decrypted using the same secret key and is printed
 After all these actions done, connection, 
 connection between client through sending FIN message to the server and receiving FIN ACK message back.
 Otherwise, connection can be identified as terminated.
+                            .create();
+                    channel.send(resp.toBuffer(), router);
+                }
+```
 
 ```
 // CLOSING REQUEST
@@ -185,9 +226,14 @@ Otherwise, connection can be identified as terminated.
                             .create();
                     channel.send(resp.toBuffer(), router);
 ```
+Post request (Similar to the GET request)
+
+Request is split by spaces and analyzed on header and directory presence. We need to specify directory in order to create a file in which later we will be able to post data that we are sending.
+After that http request payload is constructed. Three-way handshake described above is done. Now we can send our payload to the server. 
 
 -------------
-####Packets
+
+#### Packets
  
  So this part was very interesting.
  Each packet has their own properties:
@@ -213,7 +259,7 @@ I have wrote methods which Create a byte buffer in BigEndian for the packet.
 ```
 
 Also all the packets with different packet type is directly followed by the payload data.
-After execution of specific method each packet obtains "packet type":
+After execution of specific method each packet obtains defined"packet type":
 ```
  Packet p = new Packet.Builder()
                         .setType(0) //sending get request
@@ -232,12 +278,13 @@ After execution of specific method each packet obtains "packet type":
                         .setPayload(msg.getBytes())
                         .create();
 ```
-Obviously sequenceNumber++; of each packet increases.
+Obviously sequenceNumber++; increases of each packet.
  
 --------------------
-####Encryption algorithm
 
-In order to encrypt my data in packets despite default description I have used AES(Advanced Encryption Standard).
+#### Encryption algorithm
+
+In order to encrypt my data in the packets despite default decryption I have used AES(Advanced Encryption Standard).
 AES is block cipher capable of handling 128 bit blocks, using keys sized at 128, 192, and 256 bits. Each cipher encrypts and decrypts data in blocks of 128 bits using cryptographic keys of 128-, 192- and 256-bits, respectively. It uses the same key for encrypting and decrypting, so the sender and the receiver must both know — and use — the same secret key.
 
 All logic is implemented in AES.java class.
@@ -247,13 +294,27 @@ Each message that sends is encrypted and decrypted in this way:
                 String message = AES.encrypt(clientPayload, "Burlacu"); //"Burlacu" is the secret key
                 String decryptedPayload = AES.decrypt(payload, "Burlacu");
 ```
-Example Server:
-![Alt text](Images\AES.png)
 
-Example Client:
-![Alt text](Images\AES_1.png)
--------------------------
+#### Multicasting
+IP multicasting is the transmission of IP datagrams to members of a group that is zero or more hosts identified by a single destination address.
 
+The join(InetAddress,NetworkInterface,InetAddress) method is used to begin receiving datagrams sent to a group whose source address matches a given source address. This method throws UnsupportedOperationException if the underlying platform does not support source filtering. Membership is cumulative and this method may be invoked again with the same group and interface to allow receiving datagrams from other source addresses. The method returns a MembershipKey that represents membership to receive datagrams from the given source address. Invoking the key's drop method drops membership so that datagrams from the source address can no longer be received.
+
+```
+     // join multicast group on this interface, and also use this
+     // interface for outgoing multicast datagrams
+     InetAddress address = InetAddress.getLocalHost();
+    NetworkInterface ni = NetworkInterface.getByInetAddress(address);
+    InetAddress group = InetAddress.getByName("239.255.0.1");
+    
+     DatagramChannel channel = DatagramChannel.open(StandardProtocolFamily.INET)
+         .setOption(StandardSocketOptions.SO_REUSEADDR, true)
+         .bind(new InetSocketAddress(5000))
+         .setOption(StandardSocketOptions.IP_MULTICAST_IF, ni);
+
+     MembershipKey key = channel.join(group, ni);
+```
+Note that DatagramChannel.join() requires a NetworkInterface to work.
 
 ## How to use
 - Run first HTTPServerApplication.java class. In console write your directory with files which would like to manage "-d C:\\..." 
@@ -262,4 +323,4 @@ Example Client:
 
 ## Author(s)
 
-* [**Tiguliova Tatiana**](https://github.com/Tanyatsy)
+* [**Galaju Margareta**](https://github.com/MargaretaGalaju)

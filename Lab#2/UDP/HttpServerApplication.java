@@ -4,10 +4,9 @@ import java.io.IOException;
 import java.util.Scanner;
 
 public class HttpServerApplication {
-
 	public static void main(String[] args) throws IOException {
-		int port = 8080; // Default port number
-		String directory = "C:\\Users\\margo\\University\\PR\\NP\\UDP-Protocol"; // Default directory
+		int port = 8989; // Default port number
+		String directory = "D:\\University\\ProgramareInTimpReal\\Git\\Lab#2\\UDP"; // Default directory
 
 		UDP.UDPServer server = new UDP.UDPServer(); // server object
 		Scanner keyboard = new Scanner(System.in); // User input

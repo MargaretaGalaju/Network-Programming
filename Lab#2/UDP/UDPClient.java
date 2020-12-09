@@ -26,41 +26,27 @@ public class UDPClient {
     public static final String MULTICAST_INTERFACE_NAME = "eth1";
 
     public static void main(String[] args) throws IOException {
-        MembershipKey key = null;
-        DatagramChannel client = DatagramChannel.open(StandardProtocolFamily.INET);
+        InetAddress address = InetAddress.getLocalHost();
+        NetworkInterface ni = NetworkInterface.getByInetAddress(address);
+        InetAddress group = InetAddress.getByName("239.255.0.1");
 
-        NetworkInterface interf = NetworkInterface.getByName(MULTICAST_INTERFACE_NAME);
-        client.setOption(StandardSocketOptions.SO_REUSEADDR, true);
-        client.bind(new InetSocketAddress(MULTICAST_PORT));
-        client.setOption(StandardSocketOptions.IP_MULTICAST_IF, interf);
+        DatagramChannel dc = DatagramChannel.open(StandardProtocolFamily.INET)
+                .setOption(StandardSocketOptions.SO_REUSEADDR, true)
+                .bind(new InetSocketAddress(5000))
+                .setOption(StandardSocketOptions.IP_MULTICAST_IF, ni);
+        MembershipKey key = dc.join(group, ni);
 
-        InetAddress group = InetAddress.getByName(MULTICAST_IP);
-        key = client.join(group, interf);
+        ByteBuffer byteBuffer = ByteBuffer.allocate(1500);
+        while (true) {
+            if (key.isValid()) {
+                byteBuffer.clear();
+                InetSocketAddress sa = (InetSocketAddress) dc.receive(byteBuffer);
+                byteBuffer.flip();
 
-        System.out.println("Joined the   multicast  group:" + key);
-        System.out.println("Waiting for a  message  from  the" + "  multicast group....");
+                System.out.println("Multicast received from " + sa.getHostString());
 
-        try {
-            int serverPort = 8210; // Server port
-            InetSocketAddress serverAddress = new InetSocketAddress(InetAddress.getByName("localhost"), serverPort); // Server
-                                                                                                                     // Address
-            SocketAddress routerAddr = new InetSocketAddress("localhost", 8080); // router
-
-            UDPClient udpc = new UDPClient();
-            Scanner keyboard = new Scanner(System.in);
-            String clientRequest;
-
-            System.out.print("Please enter you client request: ");
-            clientRequest = keyboard.nextLine();
-
-            if (clientRequest.contains("get") || clientRequest.contains("GET")) {
-                udpc.getRequest(routerAddr, serverAddress, clientRequest);
-            } else {
-                udpc.postRequest(routerAddr, serverAddress, clientRequest);
+                // TODO: Parse message
             }
-
-        } catch (UnknownHostException e) {
-            e.printStackTrace();
         }
     }
 
