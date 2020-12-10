@@ -1,14 +1,14 @@
 # Lab 2 - Implementation of a protocol stack
 
 ## Table of contents
-  
   * [Task Description](#task-description)
-      * [Server](#server) 
-      * [Client](#client)
-      * [Packets](#packets)
-      * [Encryption](#encryption-algorithm)
   * [File List](#file-list)
   * [Implementation](#implementation)
+  * [UDP Client & UDP Server](#udp-cliend-and-server)
+  * [Packet transmission](#packet-transmission)
+  * [Encryption](#encryption-algorithm)
+  * [Multicasting](#multicasting)
+  * [File List](#file-list)
   * [How to use](#how-to-use)
   
 ## Task Description
@@ -25,7 +25,6 @@ For transport and session level protocols the BSD Sockets API is a recommended s
 - AES.java
 
 ## Implementation 
-
 I have the following features implemented in my project :
 * Client
 * Server and HttpServer
@@ -67,102 +66,6 @@ channel.send(resp.toBuffer(), router);
 ```
  SocketAddress router = channel.receive(buf);
 ```
- #### Packet transmission
-
-Packet represents a simulated network packet. As we don't have unsigned types in Java, we can achieve this by using a larger type.
-
-The following code creates a builder from the current packet It's used to create another packet by re-using some parts of the current packet.
-
-
-```
- public Builder toBuilder(){
-        return new Builder()
-                .setType(type)
-                .setSequenceNumber(sequenceNumber)
-                .setPeerAddress(peerAddress)
-                .setPortNumber(peerPort)
-                .setPayload(payload);
-```
-
-fromBuffer creates a packet from the given ByteBuffer in BigEndian.
-
-```
-public static Packet fromBuffer(ByteBuffer buf) throws IOException {
-    if (buf.limit() < MIN_LEN || buf.limit() > MAX_LEN) {
-        throw new IOException("Invalid length");
-    }
-
-    Builder builder = new Builder();
-
-    builder.setType(Byte.toUnsignedInt(buf.get()));
-    builder.setSequenceNumber(Integer.toUnsignedLong(buf.getInt()));
-
-    byte[] host = new byte[]{buf.get(), buf.get(), buf.get(), buf.get()};
-    builder.setPeerAddress(Inet4Address.getByAddress(host));
-    builder.setPortNumber(Short.toUnsignedInt(buf.getShort()));
-
-    byte[] payload = new byte[buf.remaining()];
-    buf.get(payload);
-    builder.setPayload(payload);
-
-    return builder.create();
-}
-```
-
-fromBytes creates a packet from the given array of bytes:
-
-```
-public static Packet fromBytes(byte[] bytes) throws IOException {
-    ByteBuffer buf = ByteBuffer.allocate(MAX_LEN).order(ByteOrder.BIG_ENDIAN);
-    buf.put(bytes);
-    buf.flip();
-    return fromBuffer(buf);
-}
-```
- Therefore, the main idea of my project is to show how Http client api working with UDP Server, I have preformed methods which analyse http requests and implement file managing:
- * POST file with text 
- * GET file with text
- * UPDATE(Post) existed file with text(post includes update methods too)
- 
- **HTTP parser**
- It has very simple logic in order to simulate basic operations of HTTP API requests.
- 
- Client sends request
- 
- like string
- ("post -h headesEx. -d body1 test.txt")  which is converted into -->  (POST test.txt HTTP\1.0\headesEx.-d\\body1) 
- 
- and server sends response in the following form(using postResponse( ) and getResponse( ) methods):
- 
- (HTTP\1.0 201 Created\headesEx.-d\Content-length: 5\Content-Type: text\html\\body1)
- 
-```
-                    method = splitClientPayload[0];
-                    url = splitClientPayload[1];
-                    requestHeader = splitClientPayload2[2];
-
-                    if (method.equals("get") || method.equals("GET")) {
-                        if (url.equals("/") & url.length() == 1) {
-                            getFileResponse(directory);
-                        } else {
-                            getResponse(directory, url);
-                        }
-                    } else {
-                        if (splitClientPayload2.length > 3) {
-                            requestEntityBody = splitClientPayload2[4];
-                        }
-                        postResponse(directory, url, requestEntityBody);
-                    }
-
-                    serverResponse = responseVersion + " " + statusCode + " " + phrase + "\\" + responseHeader + "\\" + "\\" + responseEntityBody;
-
-                    System.out.println("SERVER: Sending this message to client: " + serverResponse);
-```
-Also there are implemented methods for "3 way handshake" in order to make reliable UDP protocol to guarantee packet transmission.
-
---------------------
-
-#### Client
 
 Get request
 It accepts client request as a parameter. Written request is split by spaces and analyzed on header presence. 
@@ -231,12 +134,65 @@ Post request (Similar to the GET request)
 Request is split by spaces and analyzed on header and directory presence. We need to specify directory in order to create a file in which later we will be able to post data that we are sending.
 After that http request payload is constructed. Three-way handshake described above is done. Now we can send our payload to the server. 
 
--------------
 
-#### Packets
+ #### Packet transmission
+
+Packet represents a simulated network packet. As we don't have unsigned types in Java, we can achieve this by using a larger type.
+
+The following code creates a builder from the current packet It's used to create another packet by re-using some parts of the current packet.
+
+
+```
+ public Builder toBuilder(){
+        return new Builder()
+                .setType(type)
+                .setSequenceNumber(sequenceNumber)
+                .setPeerAddress(peerAddress)
+                .setPortNumber(peerPort)
+                .setPayload(payload);
+```
+
+fromBuffer creates a packet from the given ByteBuffer in BigEndian.
+
+```
+public static Packet fromBuffer(ByteBuffer buf) throws IOException {
+    if (buf.limit() < MIN_LEN || buf.limit() > MAX_LEN) {
+        throw new IOException("Invalid length");
+    }
+
+    Builder builder = new Builder();
+
+    builder.setType(Byte.toUnsignedInt(buf.get()));
+    builder.setSequenceNumber(Integer.toUnsignedLong(buf.getInt()));
+
+    byte[] host = new byte[]{buf.get(), buf.get(), buf.get(), buf.get()};
+    builder.setPeerAddress(Inet4Address.getByAddress(host));
+    builder.setPortNumber(Short.toUnsignedInt(buf.getShort()));
+
+    byte[] payload = new byte[buf.remaining()];
+    buf.get(payload);
+    builder.setPayload(payload);
+
+    return builder.create();
+}
+```
+
+fromBytes creates a packet from the given array of bytes:
+
+```
+public static Packet fromBytes(byte[] bytes) throws IOException {
+    ByteBuffer buf = ByteBuffer.allocate(MAX_LEN).order(ByteOrder.BIG_ENDIAN);
+    buf.put(bytes);
+    buf.flip();
+    return fromBuffer(buf);
+}
+```
+ Therefore, the main idea of my project is to show how Http client api working with UDP Server, I have preformed methods which analyse http requests and implement file managing:
+ * POST file with text 
+ * GET file with text
+ * UPDATE(Post) existed file with text(post includes update methods too)
  
- So this part was very interesting.
- Each packet has their own properties:
+  Each packet has their own properties:
  ```
     private final int type;
     private final long sequenceNumber;
@@ -257,32 +213,46 @@ I have wrote methods which Create a byte buffer in BigEndian for the packet.
         return buf;
     }
 ```
-
-Also all the packets with different packet type is directly followed by the payload data.
-After execution of specific method each packet obtains defined"packet type":
-```
- Packet p = new Packet.Builder()
-                        .setType(0) //sending get request
-                        .setSequenceNumber(1L)
-                        .setPortNumber(serverAddress.getPort())
-                        .setPeerAddress(serverAddress.getAddress())
-                        .setPayload(message.getBytes())
-                        .create();
-                channel.send(p.toBuffer(), routerAddr);
-
-   Packet p = new Packet.Builder()
-                        .setType(3) //closing connection
-                        .setSequenceNumber(sequenceNumber)
-                        .setPortNumber(serverAddress.getPort())
-                        .setPeerAddress(serverAddress.getAddress())
-                        .setPayload(msg.getBytes())
-                        .create();
-```
-Obviously sequenceNumber++; increases of each packet.
  
+ **HTTP parser**
+ It has very simple logic in order to simulate basic operations of HTTP API requests.
+ 
+ Client sends request
+ 
+ like string
+ ("post -h headesEx. -d body1 test.txt")  which is converted into -->  (POST test.txt HTTP\1.0\headesEx.-d\\body1) 
+ 
+ and server sends response in the following form(using postResponse( ) and getResponse( ) methods):
+ 
+ (HTTP\1.0 201 Created\headesEx.-d\Content-length: 5\Content-Type: text\html\\body1)
+ 
+```
+                    method = splitClientPayload[0];
+                    url = splitClientPayload[1];
+                    requestHeader = splitClientPayload2[2];
+
+                    if (method.equals("get") || method.equals("GET")) {
+                        if (url.equals("/") & url.length() == 1) {
+                            getFileResponse(directory);
+                        } else {
+                            getResponse(directory, url);
+                        }
+                    } else {
+                        if (splitClientPayload2.length > 3) {
+                            requestEntityBody = splitClientPayload2[4];
+                        }
+                        postResponse(directory, url, requestEntityBody);
+                    }
+
+                    serverResponse = responseVersion + " " + statusCode + " " + phrase + "\\" + responseHeader + "\\" + "\\" + responseEntityBody;
+
+                    System.out.println("SERVER: Sending this message to client: " + serverResponse);
+```
+Also there are implemented methods for "3 way handshake" in order to make reliable UDP protocol to guarantee packet transmission.
+
 --------------------
 
-#### Encryption algorithm
+#### Encryption
 
 In order to encrypt my data in the packets despite default decryption I have used AES(Advanced Encryption Standard).
 AES is block cipher capable of handling 128 bit blocks, using keys sized at 128, 192, and 256 bits. Each cipher encrypts and decrypts data in blocks of 128 bits using cryptographic keys of 128-, 192- and 256-bits, respectively. It uses the same key for encrypting and decrypting, so the sender and the receiver must both know — and use — the same secret key.
